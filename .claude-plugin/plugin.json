@@ -1,0 +1,12 @@
+{
+  "name": "code-index-md",
+  "description": "Lightweight code indexer. Maintains CODE_INDEX.md mapping function names and headings to line numbers. Auto-updates after every file edit so Claude reads only precise fragments.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Vitali Drozd"
+  },
+  "homepage": "https://github.com/6jlarogap/code-index-md",
+  "repository": "https://github.com/6jlarogap/code-index-md",
+  "license": "MIT",
+  "commands": "./.claude/commands"
+}

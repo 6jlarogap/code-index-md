@@ -1,0 +1,30 @@
+name: Validate Plugin
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate plugin structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required files exist
+        run: |
+          test -f .claude-plugin/plugin.json   || (echo "Missing .claude-plugin/plugin.json" && exit 1)
+          test -f .claude-plugin/marketplace.json || (echo "Missing .claude-plugin/marketplace.json" && exit 1)
+          test -f hooks/hooks.json             || (echo "Missing hooks/hooks.json" && exit 1)
+          test -f hooks/reindex.sh             || (echo "Missing hooks/reindex.sh" && exit 1)
+          test -f skills/code-index-md/SKILL.md || (echo "Missing skills/code-index-md/SKILL.md" && exit 1)
+          echo "All required files present."
+
+      - name: Validate reindex.sh runs
+        run: |
+          chmod +x hooks/reindex.sh
+          CLAUDE_PROJECT_ROOT=. bash hooks/reindex.sh
+          test -f CODE_INDEX.md || (echo "reindex.sh did not create CODE_INDEX.md" && exit 1)
+          echo "reindex.sh OK."
+          cat CODE_INDEX.md

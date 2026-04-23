@@ -1,0 +1,19 @@
+{
+  "name": "code-index-md",
+  "owner": {
+    "name": "Vitali Drozd"
+  },
+  "metadata": {
+    "description": "Lightweight code indexer for Claude Code projects"
+  },
+  "plugins": [
+    {
+      "name": "code-index-md",
+      "source": {
+        "source": "github",
+        "repo": "6jlarogap/code-index-md"
+      },
+      "description": "Maintains CODE_INDEX.md with function names and line numbers. Auto-updates on every file edit."
+    }
+  ]
+}
