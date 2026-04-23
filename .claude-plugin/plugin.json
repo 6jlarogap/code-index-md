@@ -8,5 +8,18 @@
   "homepage": "https://github.com/6jlarogap/code-index-md",
   "repository": "https://github.com/6jlarogap/code-index-md",
   "license": "MIT",
-  "commands": "./.claude/commands"
+  "commands": "./.claude/commands",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/reindex.sh\""
+          }
+        ]
+      }
+    ]
+  }
 }
