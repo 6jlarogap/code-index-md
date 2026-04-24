@@ -30,10 +30,10 @@ Find the function or heading. Note the line number.
 ### 2. Read only that fragment
 
 ```
-Read display.js offset=127 limit=40
+Read display.js offset=127 limit=L
 ```
 
-`offset` = line number from index (1-based), `limit` = how many lines to read (function body + a few lines buffer).
+`offset` = line number from index (1-based), `limit` = value shown next to the function in the index (lines until next function).
 
 ### 3. Stay in index mode
 
@@ -67,7 +67,7 @@ For Claude to use the index automatically in every session, add this to the proj
 ```markdown
 ## Code Navigation
 CODE_INDEX.md exists in project root. ALWAYS read it first before opening any source file.
-Find function → get line number → `Read file.js offset=N limit=30`.
+Find function → get line number + limit → `Read file.js offset=N limit=L`.
 Never load a full file when CODE_INDEX.md covers it.
 ```
 
@@ -75,4 +75,4 @@ Never load a full file when CODE_INDEX.md covers it.
 
 - [ ] `CODE_INDEX.md` exists and lists all JS files with function names + line numbers
 - [ ] Edit any JS file → `CODE_INDEX.md` timestamp updates within seconds
-- [ ] Look up a function in index → `Read file offset=N limit=30` returns the correct function body
+- [ ] Look up a function in index → `Read file offset=N limit=L` (L from index) returns the correct function body
