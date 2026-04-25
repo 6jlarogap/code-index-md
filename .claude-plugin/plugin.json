@@ -1,7 +1,7 @@
 {
   "name": "code-index-md",
   "description": "Lightweight code indexer. Maintains CODE_INDEX.md mapping function names and headings to line numbers. Auto-updates after every file edit so Claude reads only precise fragments.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": {
     "name": "Vitali Drozd"
   },

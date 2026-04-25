@@ -40,6 +40,37 @@ index_js() {
   echo ""
 }
 
+index_java() {
+  local f="$1"
+  local rel="${f#$ROOT/}"
+  local lines
+  lines=$(wc -l < "$f")
+  echo "## $rel ($lines lines)"
+  awk '
+    BEGIN { cnt = 0 }
+    /^[[:space:]]*(public[[:space:]]+)?(abstract[[:space:]]+|final[[:space:]]+)?(class|interface|enum)[[:space:]]+[A-Za-z_$]/ {
+      name = $0
+      sub(/^[[:space:]]*/, "", name)
+      sub(/[[:space:]]*\{.*$/, "", name)
+      names[cnt] = name; lnums[cnt] = NR; cnt++
+    }
+    /^[[:space:]]*(public|protected)[[:space:]]/ && /\(/ && !/^[[:space:]]*@/ && !/=[[:space:]]*/ {
+      name = $0
+      sub(/^[[:space:]]*/, "", name)
+      sub(/[[:space:]]*\{.*$/, "", name)
+      sub(/[[:space:]]*throws[[:space:]].*$/, "", name)
+      names[cnt] = name; lnums[cnt] = NR; cnt++
+    }
+    END {
+      for (i = 0; i < cnt; i++) {
+        lim = (i+1 < cnt) ? lnums[i+1] - lnums[i] : NR - lnums[i] + 1
+        printf "- `%s` \xe2\x86\x92 L%d limit=%d\n", names[i], lnums[i], lim
+      }
+    }
+  ' "$f"
+  echo ""
+}
+
 index_md() {
   local f="$1"
   local rel="${f#$ROOT/}"
@@ -65,6 +96,16 @@ index_md() {
     basename "$f" | grep -qiE '^d3' && continue
     index_js "$f"
   done
+
+  # Java files — skip test and generated directories
+  while IFS= read -r -d '' f; do
+    index_java "$f"
+  done < <(find "$ROOT" -name "*.java" \
+    -not -path "*/test/*" \
+    -not -path "*/androidTest/*" \
+    -not -path "*/.git/*" \
+    -not -path "*/build/*" \
+    -print0 | sort -z)
 
   # MD files up to 3 levels deep — skip self and vendor dirs
   while IFS= read -r -d '' f; do
