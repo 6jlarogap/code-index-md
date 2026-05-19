@@ -300,6 +300,7 @@ do_incremental() {
 
 do_full_regen() {
   local TMP="$ROOT/.code-index.tmp.$$"
+  trap "rm -rf '$TMP' 2>/dev/null" EXIT
   mkdir -p "$TMP"
   printf '# version: 2\npath\tlines\tsymbols\thot\tlang\n' > "$TMP/.manifest.tmp"
   : > "$TMP/.dirmap"
@@ -448,6 +449,7 @@ do_full_regen() {
 
   emit_tier1
   printf 'CODE_INDEX.md updated (%s)\n' "$TIMESTAMP" >&2
+  trap - EXIT
 }
 
 # ── main ─────────────────────────────────────────────────────────────────────
@@ -462,6 +464,8 @@ main() {
   mkdir -p "$INDEX_DIR"
   exec 9>"$INDEX_DIR/.lock"
   flock -w 0 9 || exit 0
+  # Prune orphaned tmp/old dirs from prior crashes (safe under lock)
+  rm -rf "$ROOT"/.code-index.tmp.* "$ROOT"/.code-index.old.* 2>/dev/null || true
 
   # Stdin guard: read FILE_PATH only from hook context (not terminal + jq present)
   local FILE_PATH=""
