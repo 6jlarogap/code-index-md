@@ -15,6 +15,8 @@ MIN_DIR_FILES=${MIN_DIR_FILES:-2}
 FLAT_LINES_THRESHOLD=${FLAT_LINES_THRESHOLD:-300}
 REINDEX_VERBOSE=${REINDEX_VERBOSE:-0}
 REINDEX_EXCLUDE="${REINDEX_EXCLUDE:-}"
+REINDEX_DEFAULT_EXCLUDE="${REINDEX_DEFAULT_EXCLUDE-venv .venv .tox .nox}"
+REINDEX_ALL_EXCLUDES="$REINDEX_DEFAULT_EXCLUDE $REINDEX_EXCLUDE"
 MAX_SUBTREE_DEPTH=${MAX_SUBTREE_DEPTH:-}   # empty = disabled; e.g. 2 collapses depth>2 dirs into ancestor
 
 PLUGIN_VERSION="unknown"
@@ -218,6 +220,7 @@ emit_tier1() {
   } > "$OUTPUT.tmp"
   mv "$OUTPUT.tmp" "$OUTPUT"
   [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: tier-1 $OUTPUT" >&2
+  return 0
 }
 
 # emit_tier2: writes .code-index/<dir_enc>.md for one directory bucket.
@@ -240,6 +243,7 @@ emit_tier2() {
     done
   } > "$dest_root/$dir_enc.md"
   [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: tier-2 $dest_root/$dir_enc.md" >&2
+  return 0
 }
 
 # ── incremental path ─────────────────────────────────────────────────────────
@@ -308,10 +312,10 @@ do_full_regen() {
   local -A file_lines file_symbols file_lang file_hot bucket
   local total_files=0 total_lines=0 max_bucket=0
 
-  # Build find exclude args from REINDEX_EXCLUDE
+  # Build find exclude args from default Python environment skips plus REINDEX_EXCLUDE.
   local exclude_args=()
   local d
-  for d in $REINDEX_EXCLUDE; do exclude_args+=(-not -path "*/$d/*"); done
+  for d in $REINDEX_ALL_EXCLUDES; do exclude_args+=(-not -path "*/$d/*"); done
 
   local f rel dir lang lines syms hot
 
@@ -462,8 +466,12 @@ main() {
     exit 0
   fi
   mkdir -p "$INDEX_DIR"
-  exec 9>"$INDEX_DIR/.lock"
+  local LOCK_ROOT="${TMPDIR:-/tmp}"
+  local LOCK_ID
+  LOCK_ID=$(printf '%s' "$ROOT" | cksum | awk '{print $1}')
+  exec 9>"$LOCK_ROOT/code-index-md-$LOCK_ID.lock"
   flock -w 0 9 || exit 0
+  rm -f "$INDEX_DIR/.lock" 2>/dev/null || true
   # Prune orphaned tmp/old dirs from prior crashes (safe under lock)
   rm -rf "$ROOT"/.code-index.tmp.* "$ROOT"/.code-index.old.* 2>/dev/null || true
 

@@ -69,7 +69,8 @@ cd your-project && bash scripts/reindex.sh
 | `*.js` in project root | Named functions, const/let/var arrow + function expressions |
 | `*.md` up to 3 levels deep | Headings `#` `##` `###` `####` |
 
-Skipped: `*.min.js`, files starting with `d3`, `node_modules/`, `.git/`
+Skipped: `*.min.js`, files starting with `d3`, `node_modules/`, `.git/`,
+common Python environment dirs (`venv/`, `.venv/`, `.tox/`, `.nox/`)
 
 ## CODE_INDEX.md format
 

@@ -76,7 +76,7 @@ CLAUDE_PROJECT_ROOT=/path/to/wiki REINDEX_EXCLUDE="state archive raw" bash hooks
 | `*.md` | Headings `#` through `####` |
 | `*.py` | Classes and functions (def/async def) |
 
-Excluded: `*.min.js`, files starting with `d3`, `node_modules/`, `.git/`, `migrations/`, `__pycache__/`
+Excluded: `*.min.js`, files starting with `d3`, `node_modules/`, `.git/`, common Python environment dirs (`venv/`, `.venv/`, `.tox/`, `.nox/`), `migrations/`, `__pycache__/`
 
 Internal files (do not edit): `.code-index/.manifest` (5-field TSV: path/lines/symbols/hot/lang), `.code-index/.dirmap` (dir→encoding map)
 
