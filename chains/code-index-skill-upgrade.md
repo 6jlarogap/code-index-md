@@ -195,7 +195,7 @@ Next slug to print: complete
 
 Handoff:
 - status: completed
-- commit: pending
+- commit: `b0be6e0`
 - files changed: `.github/workflows/test-plugin-install.yml`, `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `scripts/validate-package.py`
 - migrations/deploy: not applicable
 - checks run:
@@ -206,6 +206,9 @@ Handoff:
   - `CODE_INDEX_ROOT=. bash hooks/reindex.sh` - passed
 - failures: none
 - version review: `.claude-plugin/plugin.json` remains at `2.0.0`; no patch/minor bump because the Claude plugin command and hook contract stayed compatible.
-- push status: pending until this slice is committed.
+- push status: blocked
+- push blocker:
+  - command: `git push origin main`
+  - failure: `fatal: could not read Username for 'https://github.com': No such device or address`
 - assumptions carried forward: GitHub Actions can use local `scripts/validate-package.py` and `scripts/smoke-reindex.sh` as the same checks run locally.
 - next slug: complete
