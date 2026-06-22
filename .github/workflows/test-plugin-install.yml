@@ -14,12 +14,7 @@ jobs:
 
       - name: Check required files exist
         run: |
-          test -f .claude-plugin/plugin.json   || (echo "Missing .claude-plugin/plugin.json" && exit 1)
-          test -f .claude-plugin/marketplace.json || (echo "Missing .claude-plugin/marketplace.json" && exit 1)
-          test -f hooks/hooks.json             || (echo "Missing hooks/hooks.json" && exit 1)
-          test -f hooks/reindex.sh             || (echo "Missing hooks/reindex.sh" && exit 1)
-          test -f skills/code-index-md/SKILL.md || (echo "Missing skills/code-index-md/SKILL.md" && exit 1)
-          echo "All required files present."
+          python3 scripts/validate-package.py
 
       - name: Validate reindex.sh runs
         run: |
