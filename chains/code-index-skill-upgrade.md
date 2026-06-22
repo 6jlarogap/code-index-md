@@ -54,7 +54,7 @@ Next slug to print: `index-portable-reindex`
 
 Handoff:
 - status: completed
-- commit: pending
+- commit: `6b3c6df`
 - durable ledger decision: commit `chains/code-index-skill-upgrade.md` as project state because all later slices depend on durable per-slice handoffs; it is not kept local-only.
 - files changed: `.github/workflows/test-plugin-install.yml`, `.gitignore`, `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `scripts/validate-package.py`
 - migrations/deploy: not applicable
@@ -67,7 +67,7 @@ Handoff:
 
 ## Slice: index-portable-reindex
 
-Status: pending
+Status: completed
 Depends on: `index-baseline-validation`
 Scope:
 - Make the reindex flow more portable across Claude and Codex contexts.
@@ -89,7 +89,18 @@ Completion criteria:
 Next slug to print: `index-codex-skill`
 
 Handoff:
-- pending
+- status: completed
+- commit: pending
+- files changed: `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `hooks/reindex.sh`, `hooks/session-start.sh`, `scripts/smoke-reindex.sh`
+- migrations/deploy: not applicable
+- checks run:
+  - `CLAUDE_PROJECT_ROOT=. bash hooks/reindex.sh` - passed
+  - `CODE_INDEX_ROOT=. bash hooks/reindex.sh` - passed
+  - `bash scripts/smoke-reindex.sh` - passed
+  - `python3 scripts/validate-package.py` - passed
+- failures: none
+- assumptions carried forward: root discovery order is `CODE_INDEX_ROOT`, `CODEX_PROJECT_ROOT`, `CLAUDE_PROJECT_ROOT`, then `pwd`; Bash pyramid output remains canonical; the Blagodarie-style offset/rows compatibility improvement is limited to documenting `rows=L` as equivalent to `limit=L` in the generated navigation header so existing `offset=N limit=L` readers are not destabilized.
+- next slug: `index-codex-skill`
 
 ## Slice: index-codex-skill
 
