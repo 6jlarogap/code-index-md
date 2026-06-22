@@ -90,7 +90,7 @@ Next slug to print: `index-codex-skill`
 
 Handoff:
 - status: completed
-- commit: pending
+- commit: `5b12a78`
 - files changed: `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `hooks/reindex.sh`, `hooks/session-start.sh`, `scripts/smoke-reindex.sh`
 - migrations/deploy: not applicable
 - checks run:
@@ -104,7 +104,7 @@ Handoff:
 
 ## Slice: index-codex-skill
 
-Status: pending
+Status: completed
 Depends on: `index-portable-reindex`
 Scope:
 - Use the `skill-creator` guidance before editing skill files.
@@ -125,7 +125,18 @@ Completion criteria:
 Next slug to print: `index-docs-install`
 
 Handoff:
-- pending
+- status: completed
+- commit: pending
+- files changed: `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `skills/code-index-md/SKILL.md`, `skills/code-index-md/agents/openai.yaml`
+- migrations/deploy: not applicable
+- checks run:
+  - `python3 /home/vdrzd/.codex/skills/.system/skill-creator/scripts/generate_openai_yaml.py skills/code-index-md --interface 'display_name=Code Index MD' --interface 'short_description=Navigate repositories with CODE_INDEX.md' --interface 'default_prompt=Use $code-index-md to inspect this repository with CODE_INDEX.md before opening full source files.'` - passed
+  - `python3 /home/vdrzd/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/code-index-md` - passed
+  - `python3 scripts/validate-package.py` - passed
+  - `bash hooks/reindex.sh` - passed
+- failures: initial direct execution of `/home/vdrzd/.codex/skills/.system/skill-creator/scripts/generate_openai_yaml.py ...` failed with `Permission denied`; reran successfully through `python3`.
+- assumptions carried forward: Codex skill frontmatter should remain limited to `name` and `description`; `agents/openai.yaml` is appropriate because this repo distributes the skill, and it contains only UI metadata.
+- next slug: `index-docs-install`
 
 ## Slice: index-docs-install
 

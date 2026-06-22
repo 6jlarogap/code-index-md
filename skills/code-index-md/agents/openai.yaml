@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Index MD"
+  short_description: "Navigate repositories with CODE_INDEX.md"
+  default_prompt: "Use $code-index-md to inspect this repository with CODE_INDEX.md before opening full source files."
