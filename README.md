@@ -1,28 +1,23 @@
 # code-index-md
 
-Claude Code plugin that maintains `CODE_INDEX.md` — a markdown file mapping every JS function and MD heading to its line number. Claude reads the index first, then uses `Read file offset=N limit=30` to load only the lines it needs instead of entire files.
+`code-index-md` maintains `CODE_INDEX.md`, a compact line-number index for source and Markdown files. Agents read the index first, follow tier-2/tier-3 `.code-index/` entries when present, then read exact source fragments with `offset=N limit=L` instead of loading whole files.
 
 ## What it does
 
-- Indexes JS function names + line numbers (named functions, arrow functions, async functions)
-- Indexes MD headings (`#` through `####`) + line numbers
-- Auto-updates `CODE_INDEX.md` after every `Edit` or `Write` tool call via PostToolUse hook
-- Works with any JS/MD project — no configuration needed
+- Indexes root-level JavaScript functions
+- Indexes Python classes/functions recursively
+- Indexes Java classes/interfaces/enums and public/protected methods recursively
+- Indexes Markdown headings through `####` up to depth 3
+- Maintains tiered `.code-index/` files for larger projects
+- Preserves the Claude plugin flow while also supporting Codex skill usage
 
-## Install
+## Claude Plugin Install
+
+Install from the Claude Code plugin marketplace:
 
 ```bash
 /plugin marketplace add 6jlarogap/code-index-md
 /plugin install code-index-md@code-index-md
-```
-
-Then add to your project's `CLAUDE.md`:
-
-```markdown
-## Code Navigation
-CODE_INDEX.md exists in project root. ALWAYS read it first before opening any source file.
-Find function → get line number → `Read file.js offset=N limit=30`.
-Never load a full file when CODE_INDEX.md covers it.
 ```
 
 Run once to generate the initial index:
@@ -31,18 +26,46 @@ Run once to generate the initial index:
 /code-index-md
 ```
 
-## Manual install (without plugin system)
+Add this to the project `CLAUDE.md`:
+
+```markdown
+## Code Navigation
+CODE_INDEX.md exists in project root. Always read it before opening indexed source files.
+Follow tier-1 -> .code-index/<dir>.md -> .code-index/<dir>/<file>.md, then read exact fragments with offset=N limit=L.
+Regenerate with bash hooks/reindex.sh after indexed files change.
+```
+
+The plugin runs `hooks/session-start.sh` on session start and `hooks/reindex.sh` after Claude `Edit` or `Write` tool calls through `.claude-plugin/plugin.json`.
+
+## Codex Skill Install
+
+Clone or download this repository, then copy the skill into Codex's skill directory:
 
 ```bash
-# Copy reindex.sh to your project
-cp hooks/reindex.sh your-project/scripts/reindex.sh
-chmod +x your-project/scripts/reindex.sh
-
-# Generate initial index
-cd your-project && bash scripts/reindex.sh
-
-# Add hook to .claude/settings.local.json
+CODEX_SKILLS="${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$CODEX_SKILLS"
+cp -R skills/code-index-md "$CODEX_SKILLS/"
 ```
+
+Add this minimal snippet to the target project's `AGENTS.md`:
+
+```markdown
+## Code Navigation
+Use $code-index-md when CODE_INDEX.md exists. Read CODE_INDEX.md first, follow .code-index/ tier links, then open exact source fragments with offset=N limit=L. After indexed files change, run bash hooks/reindex.sh or CODE_INDEX_ROOT=. bash /path/to/code-index-md/hooks/reindex.sh.
+```
+
+## Manual Hook Install
+
+Use this path for projects that do not use the Claude plugin system:
+
+```bash
+PROJECT=/path/to/your-project
+CODE_INDEX_MD=/path/to/code-index-md
+install -D -m 755 "$CODE_INDEX_MD/hooks/reindex.sh" "$PROJECT/scripts/code-index-reindex.sh"
+CODE_INDEX_ROOT="$PROJECT" bash "$PROJECT/scripts/code-index-reindex.sh"
+```
+
+For Claude hook integration without the plugin marketplace, add this to `.claude/settings.local.json` in the target project:
 
 ```json
 {
@@ -53,7 +76,7 @@ cd your-project && bash scripts/reindex.sh
         "hooks": [
           {
             "type": "command",
-            "command": "cd /path/to/your-project && bash scripts/reindex.sh"
+            "command": "CODE_INDEX_ROOT=/path/to/your-project bash /path/to/your-project/scripts/code-index-reindex.sh"
           }
         ]
       }
@@ -62,28 +85,76 @@ cd your-project && bash scripts/reindex.sh
 }
 ```
 
-## What gets indexed
+## Root Variables
 
-| Files | Extracted |
-|-------|-----------|
-| `*.js` in project root | Named functions, const/let/var arrow + function expressions |
-| `*.md` up to 3 levels deep | Headings `#` `##` `###` `####` |
+`hooks/reindex.sh` chooses the project root in this order:
 
-Skipped: `*.min.js`, files starting with `d3`, `node_modules/`, `.git/`,
-common Python environment dirs (`venv/`, `.venv/`, `.tox/`, `.nox/`)
+1. `CODE_INDEX_ROOT`
+2. `CODEX_PROJECT_ROOT`
+3. `CLAUDE_PROJECT_ROOT`
+4. current working directory
 
-## CODE_INDEX.md format
+Examples:
+
+```bash
+CODE_INDEX_ROOT=/path/to/project bash hooks/reindex.sh
+CODEX_PROJECT_ROOT=/path/to/project bash hooks/reindex.sh
+CLAUDE_PROJECT_ROOT=/path/to/project bash hooks/reindex.sh
+```
+
+## Exclusions
+
+Default skips include `.git/`, `.code-index/`, `node_modules/`, Java build/test dirs, minified JS, `d3*` JS files, Python virtualenv/cache dirs (`venv/`, `.venv/`, `.tox/`, `.nox/`, `__pycache__/`), and `migrations/`.
+
+Add project-specific exclusions with space-separated directory names:
+
+```bash
+REINDEX_EXCLUDE="state archive raw" CODE_INDEX_ROOT=/path/to/project bash hooks/reindex.sh
+```
+
+Collapse deep directory buckets into ancestors with:
+
+```bash
+MAX_SUBTREE_DEPTH=2 CODE_INDEX_ROOT=/path/to/project bash hooks/reindex.sh
+```
+
+## CODE_INDEX.md Format
+
+Small projects stay flat:
 
 ```markdown
 # CODE_INDEX.md
 > Auto-generated by code-index-md. Do not edit manually.
-> Updated: 2026-04-23T08:14:06Z
+> Updated: 2026-06-22T14:17:14Z
+> Plugin-Version: 2.0.0
+> Usage: find symbol -> line number -> `Read file offset=N limit=L` (rows=L compatible)
 
-## display.js (439 lines)
-- `drag` → L1
-- `nodeType` → L23
-- `initializeBaseDisplay` → L27
-...
+## app.js (7 lines)
+- `alpha` -> L1 limit=4
+```
+
+Larger projects use tiered navigation:
+
+```markdown
+## SUBTREES
+| Path | Lang | Files | Symbols | Index |
+|------|------|-------|---------|-------|
+| scripts/ | py | 12 | 80 | [[.code-index/scripts.md]] |
+
+## HOT FILES
+| File | Lines | Symbols | Index |
+|------|-------|---------|-------|
+| scripts/basket.py | 900 | 50 | [[.code-index/scripts/basket.md]] |
+```
+
+`limit=L` is canonical for Claude/Codex reads; `rows=L` means the same number of lines when using tools that prefer that name.
+
+## Validation
+
+```bash
+python3 scripts/validate-package.py
+bash scripts/smoke-reindex.sh
+bash hooks/reindex.sh
 ```
 
 ## License

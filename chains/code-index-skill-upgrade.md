@@ -126,7 +126,7 @@ Next slug to print: `index-docs-install`
 
 Handoff:
 - status: completed
-- commit: pending
+- commit: `2745194`
 - files changed: `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `skills/code-index-md/SKILL.md`, `skills/code-index-md/agents/openai.yaml`
 - migrations/deploy: not applicable
 - checks run:
@@ -140,7 +140,7 @@ Handoff:
 
 ## Slice: index-docs-install
 
-Status: pending
+Status: completed
 Depends on: `index-codex-skill`
 Scope:
 - Update `README.md` with separate Claude plugin, Codex skill, and manual install paths.
@@ -159,7 +159,17 @@ Completion criteria:
 Next slug to print: `index-ci-release`
 
 Handoff:
-- pending
+- status: completed
+- commit: pending
+- files changed: `README.md`, `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`
+- migrations/deploy: not applicable
+- checks run:
+  - `python3 scripts/validate-package.py` - passed
+  - `bash scripts/smoke-reindex.sh` - passed
+  - `bash hooks/reindex.sh` - passed
+- failures: none
+- assumptions carried forward: the requested Codex `AGENTS.md` instruction is documented as a copyable README snippet rather than adding a repo-local `AGENTS.md`, because this repository does not need new local agent rules for itself.
+- next slug: `index-ci-release`
 
 ## Slice: index-ci-release
 
