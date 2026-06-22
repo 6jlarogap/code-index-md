@@ -16,10 +16,16 @@ jobs:
         run: |
           python3 scripts/validate-package.py
 
-      - name: Validate reindex.sh runs
+      - name: Validate smoke fixture
+        run: |
+          chmod +x scripts/smoke-reindex.sh
+          bash scripts/smoke-reindex.sh
+
+      - name: Validate representative reindex runs
         run: |
           chmod +x hooks/reindex.sh
           CLAUDE_PROJECT_ROOT=. bash hooks/reindex.sh
+          CODEX_PROJECT_ROOT=. bash hooks/reindex.sh
+          CODE_INDEX_ROOT=. bash hooks/reindex.sh
           test -f CODE_INDEX.md || (echo "reindex.sh did not create CODE_INDEX.md" && exit 1)
           echo "reindex.sh OK."
-          cat CODE_INDEX.md

@@ -160,7 +160,7 @@ Next slug to print: `index-ci-release`
 
 Handoff:
 - status: completed
-- commit: pending
+- commit: `1ba4d68`
 - files changed: `README.md`, `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`
 - migrations/deploy: not applicable
 - checks run:
@@ -173,7 +173,7 @@ Handoff:
 
 ## Slice: index-ci-release
 
-Status: pending
+Status: completed
 Depends on: `index-docs-install`
 Scope:
 - Update GitHub Actions validation to check the Claude plugin files, Codex skill files, and representative reindex runs.
@@ -194,4 +194,18 @@ Completion criteria:
 Next slug to print: complete
 
 Handoff:
-- pending
+- status: completed
+- commit: pending
+- files changed: `.github/workflows/test-plugin-install.yml`, `CODE_INDEX.md`, `chains/code-index-skill-upgrade.md`, `scripts/validate-package.py`
+- migrations/deploy: not applicable
+- checks run:
+  - `python3 scripts/validate-package.py` - passed
+  - `bash scripts/smoke-reindex.sh` - passed
+  - `CLAUDE_PROJECT_ROOT=. bash hooks/reindex.sh` - passed
+  - `CODEX_PROJECT_ROOT=. bash hooks/reindex.sh` - passed
+  - `CODE_INDEX_ROOT=. bash hooks/reindex.sh` - passed
+- failures: none
+- version review: `.claude-plugin/plugin.json` remains at `2.0.0`; no patch/minor bump because the Claude plugin command and hook contract stayed compatible.
+- push status: pending until this slice is committed.
+- assumptions carried forward: GitHub Actions can use local `scripts/validate-package.py` and `scripts/smoke-reindex.sh` as the same checks run locally.
+- next slug: complete

@@ -17,6 +17,7 @@ REQUIRED_FILES = [
     "hooks/reindex.sh",
     "hooks/session-start.sh",
     "skills/code-index-md/SKILL.md",
+    "skills/code-index-md/agents/openai.yaml",
 ]
 
 
@@ -40,6 +41,22 @@ def require_file(path: str) -> None:
 def path_from_plugin_ref(ref: str) -> str | None:
     match = re.search(r'\$\{CLAUDE_PLUGIN_ROOT\}/([^"]+)', ref)
     return match.group(1) if match else None
+
+
+def parse_skill_frontmatter(skill: str) -> dict[str, str]:
+    match = re.match(r"^---\n(.*?)\n---\n", skill, re.DOTALL)
+    if not match:
+        fail("skills/code-index-md/SKILL.md must have YAML frontmatter")
+
+    fields = {}
+    for line in match.group(1).splitlines():
+        if not line.strip():
+            continue
+        if ":" not in line:
+            fail(f"invalid skill frontmatter line: {line}")
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip().strip('"')
+    return fields
 
 
 def main() -> None:
@@ -82,16 +99,43 @@ def main() -> None:
         fail("SessionStart must run hooks/session-start.sh")
     if not any("hooks/reindex.sh" in command for command in commands):
         fail("PostToolUse must run hooks/reindex.sh")
+    if ((ROOT / "hooks/reindex.sh").stat().st_mode & 0o111) == 0:
+        fail("hooks/reindex.sh must be executable")
+    if ((ROOT / "hooks/session-start.sh").stat().st_mode & 0o111) == 0:
+        fail("hooks/session-start.sh must be executable")
 
     plugins = marketplace.get("plugins", [])
     if not any(item.get("name") == "code-index-md" for item in plugins if isinstance(item, dict)):
         fail(".claude-plugin/marketplace.json must list code-index-md")
 
     skill = (ROOT / "skills/code-index-md/SKILL.md").read_text(encoding="utf-8")
-    if not skill.startswith("---\n") or "\n---\n" not in skill[4:]:
-        fail("skills/code-index-md/SKILL.md must have YAML frontmatter")
-    if "CODE_INDEX.md" not in skill:
-        fail("skills/code-index-md/SKILL.md must mention CODE_INDEX.md")
+    frontmatter = parse_skill_frontmatter(skill)
+    if set(frontmatter) != {"name", "description"}:
+        fail("skill frontmatter must contain only name and description")
+    if frontmatter["name"] != "code-index-md":
+        fail("skill frontmatter name must be code-index-md")
+    description = frontmatter["description"]
+    for trigger in ["CODE_INDEX.md", "code index", "line-number index", "rebuilding a code index"]:
+        if trigger not in description:
+            fail(f"skill description must include trigger: {trigger}")
+    for required in ["CODE_INDEX.md", ".code-index/", "offset=127 limit=45", "bash hooks/reindex.sh"]:
+        if required not in skill:
+            fail(f"skills/code-index-md/SKILL.md must mention {required}")
+
+    openai_yaml = (ROOT / "skills/code-index-md/agents/openai.yaml").read_text(encoding="utf-8")
+    for required in [
+        'display_name: "Code Index MD"',
+        'short_description: "Navigate repositories with CODE_INDEX.md"',
+        'default_prompt: "Use $code-index-md',
+    ]:
+        if required not in openai_yaml:
+            fail(f"agents/openai.yaml must include {required}")
+
+    if "CODE_INDEX.md" not in (ROOT / ".claude/commands/code-index-md.md").read_text(encoding="utf-8"):
+        fail(".claude/commands/code-index-md.md must mention CODE_INDEX.md")
+
+    if "CODE_INDEX.md" not in (ROOT / "README.md").read_text(encoding="utf-8"):
+        fail("README.md must mention CODE_INDEX.md")
 
     print("Package validation OK.")
 
