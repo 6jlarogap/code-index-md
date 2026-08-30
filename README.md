@@ -4,7 +4,8 @@
 
 ## What it does
 
-- Indexes root-level JavaScript functions
+- Indexes JavaScript functions recursively (`.js`, `.mjs`, `.cjs`)
+- Indexes shell functions recursively (`.sh`)
 - Indexes Python classes/functions recursively
 - Indexes Java classes/interfaces/enums and public/protected methods recursively
 - Indexes Markdown headings through `####` up to depth 3

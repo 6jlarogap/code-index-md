@@ -63,6 +63,32 @@ index_js() {
   echo ""
 }
 
+index_sh() {
+  local f="$1"
+  local rel="${f#$ROOT/}"
+  local lines
+  lines=$(wc -l < "$f")
+  echo "## $rel ($lines lines)"
+  awk '
+    BEGIN { cnt = 0 }
+    /^[[:space:]]*function[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(\(\))?[[:space:]]*\{/ {
+      name = $0; sub(/^[[:space:]]*function[[:space:]]+/, "", name); sub(/[[:space:]]*\(.*/, "", name)
+      names[cnt] = name; lnums[cnt] = NR; cnt++
+    }
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*\{/ {
+      name = $0; sub(/^[[:space:]]*/, "", name); sub(/[[:space:]]*\(.*/, "", name)
+      names[cnt] = name; lnums[cnt] = NR; cnt++
+    }
+    END {
+      for (i = 0; i < cnt; i++) {
+        lim = (i+1 < cnt) ? lnums[i+1] - lnums[i] : NR - lnums[i] + 1
+        printf "- `%s` \xe2\x86\x92 L%d limit=%d\n", names[i], lnums[i], lim
+      }
+    }
+  ' "$f"
+  echo ""
+}
+
 index_java() {
   local f="$1"
   local rel="${f#$ROOT/}"
@@ -133,7 +159,7 @@ index_py() {
 # ── pyramid helpers ──────────────────────────────────────────────────────────
 
 detect_lang() {
-  case "${1##*.}" in py) echo py;; js) echo js;; java) echo java;; md) echo md;; esac
+  case "${1##*.}" in py) echo py;; js|mjs|cjs) echo js;; sh) echo sh;; java) echo java;; md) echo md;; esac
 }
 
 compute_hot() {
@@ -165,7 +191,7 @@ encode_dir() {
 # emit_tier1: writes CODE_INDEX.md from in-memory file_* + bucket arrays.
 emit_tier1() {
   local t1_sub="" t1_hot="" t1_inline=""
-  local dir dir_enc files count rel lang lines syms hot base base_noext dir_syms dir_display
+  local dir dir_enc files count rel lang lines syms hot base dir_syms dir_display dir_lang
 
   for dir in $(printf '%s\n' "${!bucket[@]}" | sort); do
     IFS=' ' read -ra files <<< "${bucket[$dir]:-}"
@@ -179,19 +205,21 @@ emit_tier1() {
     else
       dir_enc=$(encode_dir "$dir")
       dir_syms=0
+      dir_lang="${file_lang[${files[0]}]}"
       for rel in "${files[@]}"; do
         [[ -z "$rel" ]] && continue
         dir_syms=$(( dir_syms + ${file_symbols[$rel]:-0} ))
+        [[ "${file_lang[$rel]}" == "$dir_lang" ]] || dir_lang="mixed"
       done
       [[ "$dir" == "." ]] && dir_display="." || dir_display="${dir}/"
-      t1_sub+="| $dir_display | ${file_lang[${files[0]}]} | $count | $dir_syms | [[.code-index/$dir_enc.md]] |\n"
+      t1_sub+="| $dir_display | $dir_lang | $count | $dir_syms | [[.code-index/$dir_enc.md]] |\n"
       for rel in $(printf '%s\n' "${files[@]}" | sort); do
         [[ -z "$rel" ]] && continue
         hot=${file_hot[$rel]}
         if [[ $hot == 1 ]]; then
-          base=$(basename "$rel"); base_noext="${base%.*}"
+          base=$(basename "$rel")
           lines=${file_lines[$rel]}; syms=${file_symbols[$rel]}
-          t1_hot+="| $rel | $lines | $syms | [[.code-index/$dir_enc/$base_noext.md]] |\n"
+          t1_hot+="| $rel | $lines | $syms | [[.code-index/$dir_enc/$base.md]] |\n"
         fi
       done
     fi
@@ -234,17 +262,17 @@ emit_tier1() {
 # emit_tier2: writes .code-index/<dir_enc>.md for one directory bucket.
 emit_tier2() {
   local dir="$1" dir_enc="$2" dest_root="${3:-$INDEX_DIR}"
-  local rel base base_noext lines syms hot
+  local rel base lines syms hot
 
   {
     printf '# .code-index/%s.md\n> Full symbols for: %s\n\n' "$dir_enc" "$dir"
     for rel in $(printf '%s\n' ${bucket[$dir]:-} | sort); do
       [[ -z "$rel" ]] && continue
-      base=$(basename "$rel"); base_noext="${base%.*}"
+      base=$(basename "$rel")
       lines=${file_lines[$rel]}; syms=${file_symbols[$rel]}; hot=${file_hot[$rel]}
       if [[ $hot == 1 ]]; then
         printf '## %s (%s lines) \xe2\x86\x92 HOT [[.code-index/%s/%s.md]]\n\n' \
-          "$base" "$lines" "$dir_enc" "$base_noext"
+          "$base" "$lines" "$dir_enc" "$base"
       else
         index_${file_lang[$rel]} "$ROOT/$rel"
       fi
@@ -259,6 +287,7 @@ emit_tier2() {
 do_incremental() {
   local rel="${FILE_PATH#$ROOT/}"
   [[ -z "${old_mlines[$rel]+x}" ]] && return 1
+  [[ -f "$ROOT/$rel" ]] || return 1
 
   local lang lines syms hot
   lang=$(detect_lang "$rel")
@@ -292,11 +321,15 @@ do_incremental() {
   emit_tier2 "$dir" "$dir_enc" "$INDEX_DIR"
 
   if [[ $hot == 1 ]]; then
-    local base_noext
-    base_noext=$(basename "$rel"); base_noext="${base_noext%.*}"
+    local base
+    base=$(basename "$rel")
     mkdir -p "$INDEX_DIR/$dir_enc"
-    index_${lang} "$ROOT/$rel" > "$INDEX_DIR/$dir_enc/$base_noext.md"
-    [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: tier-3 $INDEX_DIR/$dir_enc/$base_noext.md" >&2
+    index_${lang} "$ROOT/$rel" > "$INDEX_DIR/$dir_enc/$base.md"
+    [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: tier-3 $INDEX_DIR/$dir_enc/$base.md" >&2
+  elif [[ ${old_mhot[$rel]} == 1 ]]; then
+    local base
+    base=$(basename "$rel")
+    rm -f "$INDEX_DIR/$dir_enc/$base.md"
   fi
 
   awk -F'\t' -v r="$rel" -v l="$lines" -v s="$syms" -v h="$hot" -v g="$lang" \
@@ -327,10 +360,9 @@ do_full_regen() {
 
   local f rel dir lang lines syms hot
 
-  # JS — root level only, skip minified and vendor
-  for f in "$ROOT"/*.js; do
-    [[ -f "$f" ]] || continue
-    [[ "$f" == *.min.js ]] && continue
+  # JavaScript — recursive, skip minified and vendor
+  while IFS= read -r -d '' f; do
+    [[ "$f" == *.min.js || "$f" == *.min.mjs || "$f" == *.min.cjs ]] && continue
     basename "$f" | grep -qiE '^d3' && continue
     rel="${f#$ROOT/}"; dir=$(dirname "$rel"); lang=js
     lines=$(wc -l < "$f"); syms=$(index_js "$f" | grep -c "^- " || true)
@@ -339,7 +371,9 @@ do_full_regen() {
     bucket[$dir]+="$rel "
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
-  done
+  done < <(find "$ROOT" \( -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) \
+    -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/d3js/*" \
+    -not -path "*/.code-index*" "${exclude_args[@]}" -print0 | sort -z)
 
   # Java — recursive, skip test/generated
   while IFS= read -r -d '' f; do
@@ -384,6 +418,19 @@ do_full_regen() {
     -not -path "*/.code-index*" \
     "${exclude_args[@]}" -print0 | sort -z)
 
+  # Shell — recursive, using function declarations as symbols
+  while IFS= read -r -d '' f; do
+    rel="${f#$ROOT/}"; dir=$(dirname "$rel"); lang=sh
+    lines=$(wc -l < "$f"); syms=$(index_sh "$f" | grep -c "^- " || true)
+    hot=$(compute_hot "$lang" "$lines" "$syms")
+    file_lines[$rel]=$lines; file_symbols[$rel]=$syms; file_lang[$rel]=$lang; file_hot[$rel]=$hot
+    bucket[$dir]+="$rel "
+    total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
+    printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
+  done < <(find "$ROOT" -name "*.sh" \
+    -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/.code-index*" \
+    "${exclude_args[@]}" -print0 | sort -z)
+
   # Rebucket deep dirs into ancestor at MAX_SUBTREE_DEPTH (defense against embedded repos)
   if [[ -n "${MAX_SUBTREE_DEPTH:-}" ]] && (( MAX_SUBTREE_DEPTH > 0 )); then
     declare -A rebucket
@@ -418,12 +465,18 @@ do_full_regen() {
       printf '> Usage: find symbol \xe2\x86\x92 line number \xe2\x86\x92 `Read file offset=N limit=L` (rows=L compatible)\n'
       printf '\n'
       for rel in "${!file_lang[@]}"; do [[ "${file_lang[$rel]}" == "js" ]]   && index_js   "$ROOT/$rel"; done
+      for rel in "${!file_lang[@]}"; do [[ "${file_lang[$rel]}" == "sh" ]]   && index_sh   "$ROOT/$rel"; done
       for rel in "${!file_lang[@]}"; do [[ "${file_lang[$rel]}" == "java" ]] && index_java "$ROOT/$rel"; done
       for rel in "${!file_lang[@]}"; do [[ "${file_lang[$rel]}" == "md" ]]   && index_md   "$ROOT/$rel"; done
       for rel in "${!file_lang[@]}"; do [[ "${file_lang[$rel]}" == "py" ]]   && index_py   "$ROOT/$rel"; done
     } > "$OUTPUT"
-    rm -rf "$TMP"
+    mv "$TMP/.manifest.tmp" "$TMP/.manifest"
+    local OLD="$ROOT/.code-index.old.$$"
+    [[ -e "$INDEX_DIR" ]] && mv "$INDEX_DIR" "$OLD"
+    mv "$TMP" "$INDEX_DIR"
+    rm -rf "$OLD"
     printf 'CODE_INDEX.md updated flat (%s)\n' "$TIMESTAMP" >&2
+    trap - EXIT
     return 0
   fi
 
@@ -442,9 +495,9 @@ do_full_regen() {
       for rel in "${files[@]}"; do
         [[ -z "$rel" ]] && continue
         if [[ ${file_hot[$rel]} == 1 ]]; then
-          local bne; bne=$(basename "$rel"); bne="${bne%.*}"
-          index_${file_lang[$rel]} "$ROOT/$rel" > "$TMP/$dir_enc/$bne.md"
-          [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: tier-3 $dir_enc/$bne.md" >&2
+          local base; base=$(basename "$rel")
+          index_${file_lang[$rel]} "$ROOT/$rel" > "$TMP/$dir_enc/$base.md"
+          [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: tier-3 $dir_enc/$base.md" >&2
         fi
       done
     fi
@@ -478,7 +531,7 @@ main() {
   local LOCK_ID
   LOCK_ID=$(printf '%s' "$ROOT" | cksum | awk '{print $1}')
   exec 9>"$LOCK_ROOT/code-index-md-$LOCK_ID.lock"
-  flock -w 0 9 || exit 0
+  flock 9
   rm -f "$INDEX_DIR/.lock" 2>/dev/null || true
   # Prune orphaned tmp/old dirs from prior crashes (safe under lock)
   rm -rf "$ROOT"/.code-index.tmp.* "$ROOT"/.code-index.old.* 2>/dev/null || true

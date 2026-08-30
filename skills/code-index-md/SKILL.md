@@ -35,7 +35,7 @@ Root discovery order is `CODE_INDEX_ROOT`, `CODEX_PROJECT_ROOT`, `CLAUDE_PROJECT
 
 ## Indexed Content
 
-The generator indexes `*.js`, `*.py`, `*.java`, and Markdown headings through `####`. It skips generated/vendor paths such as `.git/`, `.code-index/`, `node_modules/`, Python virtualenv/cache directories, Java build/test dirs, minified JS, and user exclusions from `REINDEX_EXCLUDE`.
+The generator indexes JavaScript (`*.js`, `*.mjs`, `*.cjs`), shell (`*.sh`), Python (`*.py`), Java (`*.java`), and Markdown headings through `####`. It skips generated/vendor paths such as `.git/`, `.code-index/`, `node_modules/`, Python virtualenv/cache directories, Java build/test dirs, minified JS, and user exclusions from `REINDEX_EXCLUDE`.
 
 Never edit generated `.code-index/` files or temporary `.code-index.tmp.*` / `.code-index.old.*` directories. Update source files and regenerate instead.
 
