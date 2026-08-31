@@ -166,10 +166,21 @@ run_collision_case() {
   test -f "$project/.code-index/pkg/module.mjs.md"
 }
 
+run_home_rejection_case() {
+  local project="$TMP_ROOT/home"
+  mkdir -p "$project"
+  if HOME="$project" CODE_INDEX_ROOT="$project" bash "$ROOT_DIR/hooks/reindex.sh"; then
+    echo "Expected reindex.sh to reject HOME" >&2
+    exit 1
+  fi
+  test ! -e "$project/.code-index"
+}
+
 run_case claude
 run_case codex
 run_case generic
 run_freshness_case
 run_collision_case
+run_home_rejection_case
 
 echo "Reindex smoke OK."

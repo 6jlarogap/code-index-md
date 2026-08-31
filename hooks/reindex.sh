@@ -10,6 +10,11 @@ resolve_root() {
 }
 
 ROOT="$(resolve_root)"
+HOME_ROOT="$(cd "${HOME:?HOME must be set}" && pwd -P)"
+if [[ "$ROOT" == "$HOME_ROOT" ]]; then
+  echo "Refusing to index HOME: $ROOT" >&2
+  exit 1
+fi
 OUTPUT="$ROOT/CODE_INDEX.md"
 INDEX_DIR="$ROOT/.code-index"
 MANIFEST="$INDEX_DIR/.manifest"
