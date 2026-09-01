@@ -362,6 +362,12 @@ do_full_regen() {
   local exclude_args=()
   local d
   for d in $REINDEX_ALL_EXCLUDES; do exclude_args+=(-not -path "*/$d/*"); done
+  # Prune nested Git repositories; the selected ROOT itself remains indexable.
+  local git_repo_prune=(-mindepth 1 \( -type d -exec test -e '{}/.git' \; -prune \) -o)
+  local gitlink_prune=() gitlink
+  while IFS= read -r gitlink; do
+    [[ -n "$gitlink" ]] && gitlink_prune+=(-path "$ROOT/$gitlink" -prune -o)
+  done < <(git -C "$ROOT" ls-files -s 2>/dev/null | awk '$1 == "160000" {sub(/^[^\t]*\t/, ""); print}')
 
   local f rel dir lang lines syms hot
 
@@ -376,7 +382,7 @@ do_full_regen() {
     bucket[$dir]+="$rel "
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
-  done < <(find "$ROOT" \( -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) \
+  done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" \( -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) \
     -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/d3js/*" \
     -not -path "*/.code-index*" "${exclude_args[@]}" -print0 | sort -z)
 
@@ -389,7 +395,7 @@ do_full_regen() {
     bucket[$dir]+="$rel "
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
-  done < <(find "$ROOT" -name "*.java" \
+  done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -name "*.java" \
     -not -path "*/test/*" -not -path "*/androidTest/*" \
     -not -path "*/.git/*" -not -path "*/build/*" -not -path "*/.code-index*" \
     "${exclude_args[@]}" -print0 | sort -z)
@@ -404,7 +410,7 @@ do_full_regen() {
     bucket[$dir]+="$rel "
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
-  done < <(find "$ROOT" -maxdepth 3 -name "*.md" \
+  done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -maxdepth 3 -name "*.md" \
     -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/d3js/*" \
     -not -path "*/.code-index*" -not -path "*/.pytest_cache/*" \
     "${exclude_args[@]}" -print0 | sort -z)
@@ -418,7 +424,7 @@ do_full_regen() {
     bucket[$dir]+="$rel "
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
-  done < <(find "$ROOT" -name "*.py" \
+  done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -name "*.py" \
     -not -path "*/.git/*" -not -path "*/migrations/*" -not -path "*/__pycache__/*" \
     -not -path "*/.code-index*" \
     "${exclude_args[@]}" -print0 | sort -z)
@@ -432,7 +438,7 @@ do_full_regen() {
     bucket[$dir]+="$rel "
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
-  done < <(find "$ROOT" -name "*.sh" \
+  done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -name "*.sh" \
     -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/.code-index*" \
     "${exclude_args[@]}" -print0 | sort -z)
 

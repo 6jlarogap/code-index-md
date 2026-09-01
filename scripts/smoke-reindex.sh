@@ -8,7 +8,11 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 write_fixture() {
   local project="$1"
   mkdir -p "$project/src/main/java/example" "$project/docs" "$project/pkg" \
-    "$project/nested" "$project/esm" "$project/common" "$project/scripts"
+    "$project/nested" "$project/nested-repo/.git" "$project/gitlink-repo" "$project/esm" "$project/common" "$project/scripts"
+  git init -q "$project"
+  git init -q "$project/gitlink-repo"
+  git -C "$project/gitlink-repo" config user.name smoke
+  git -C "$project/gitlink-repo" config user.email smoke@example.test
   cat > "$project/app.js" <<'JS'
 function alpha() {
   return 1;
@@ -23,6 +27,20 @@ function nested() {
   return 3;
 }
 JS
+  cat > "$project/nested-repo/feature.js" <<'JS'
+function nestedRepo() {
+  return 6;
+}
+JS
+  cat > "$project/gitlink-repo/feature.js" <<'JS'
+function gitlinkRepo() {
+  return 7;
+}
+JS
+  git -C "$project/gitlink-repo" add feature.js
+  git -C "$project/gitlink-repo" commit -qm initial
+  git -C "$project" add gitlink-repo
+  rm -rf "$project/gitlink-repo/.git"
   cat > "$project/esm/module.mjs" <<'JS'
 export function moduleFn() {
   return 4;
@@ -101,6 +119,9 @@ run_case() {
   assert_contains "$project/CODE_INDEX.md" 'offset=N limit=L'
   assert_contains "$project/CODE_INDEX.md" 'alpha'
   assert_contains "$project/CODE_INDEX.md" 'nested'
+  assert_not_contains "$project/CODE_INDEX.md" 'nestedRepo'
+  assert_not_contains "$project/CODE_INDEX.md" 'gitlinkRepo'
+  assert_not_contains "$project/.code-index/.manifest" 'gitlink-repo'
   assert_contains "$project/CODE_INDEX.md" 'moduleFn'
   assert_contains "$project/CODE_INDEX.md" 'commonFn'
   assert_contains "$project/CODE_INDEX.md" 'run_task'
@@ -108,6 +129,9 @@ run_case() {
   assert_contains "$project/CODE_INDEX.md" 'class Sample'
   assert_contains "$project/CODE_INDEX.md" 'public class App'
   assert_contains "$project/CODE_INDEX.md" '# Guide'
+
+  CODE_INDEX_ROOT="$project/nested-repo" bash "$ROOT_DIR/hooks/reindex.sh"
+  assert_contains "$project/nested-repo/CODE_INDEX.md" 'nestedRepo'
 }
 
 run_freshness_case() {
