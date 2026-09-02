@@ -9,11 +9,12 @@ Use the generated index before opening indexed source files. The goal is to read
 
 ## Navigation Workflow
 
-1. Read `CODE_INDEX.md` first.
+1. Inspect the `CODE_INDEX.md` header and relevant headings first; read it whole only when the index is small. For large indexes, search the relevant heading.
 2. If it has `SUBTREES`, open the referenced `.code-index/<dir>.md` for the directory you need.
 3. If a file is marked `HOT`, open the referenced `.code-index/<dir>/<file>.md`.
 4. Read source with the indexed line and size, for example `Read path/to/file.py offset=127 limit=45`. Treat `rows=L` examples as equivalent to `limit=L`.
-5. If the project is small and `CODE_INDEX.md` is flat, read line numbers directly from it.
+5. Follow `Continue:` links in paginated tier files, including singleton-tier links.
+6. If the project is small and `CODE_INDEX.md` is flat, read line numbers directly from it.
 
 ## After Edits
 
@@ -47,7 +48,6 @@ Suggested Claude project instruction:
 
 ```markdown
 ## Code Navigation
-CODE_INDEX.md exists in project root. Always read it before opening indexed source files.
-Follow tier-1 -> .code-index/<dir>.md -> .code-index/<dir>/<file>.md, then read exact fragments with offset=N limit=L.
+CODE_INDEX.md exists in project root. Inspect its header and relevant headings first; read it whole only when the index is small. For large indexes, search the relevant heading, follow tier-1 -> .code-index/<dir>.md -> .code-index/<dir>/<file>.md and any `Continue:` links, then read exact fragments with offset=N limit=L.
 Regenerate with bash hooks/reindex.sh after indexed files change.
 ```

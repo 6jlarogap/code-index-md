@@ -31,8 +31,7 @@ Add this to the project `CLAUDE.md`:
 
 ```markdown
 ## Code Navigation
-CODE_INDEX.md exists in project root. Always read it before opening indexed source files.
-Follow tier-1 -> .code-index/<dir>.md -> .code-index/<dir>/<file>.md, then read exact fragments with offset=N limit=L.
+CODE_INDEX.md exists in project root. Inspect its header and relevant headings first; read it whole only when the index is small. For large indexes, search the relevant heading, follow tier-1 -> .code-index/<dir>.md -> .code-index/<dir>/<file>.md and any `Continue:` links, then read exact fragments with offset=N limit=L.
 Regenerate with bash hooks/reindex.sh after indexed files change.
 ```
 
@@ -52,7 +51,7 @@ Add this minimal snippet to the target project's `AGENTS.md`:
 
 ```markdown
 ## Code Navigation
-Use $code-index-md when CODE_INDEX.md exists. Read CODE_INDEX.md first, follow .code-index/ tier links, then open exact source fragments with offset=N limit=L. After indexed files change, run bash hooks/reindex.sh or CODE_INDEX_ROOT=. bash /path/to/code-index-md/hooks/reindex.sh.
+Use $code-index-md when CODE_INDEX.md exists. Inspect its header and relevant headings first; read it whole only when the index is small. For large indexes, search the relevant heading, follow .code-index/ tier links and any `Continue:` links, then open exact source fragments with offset=N limit=L. After indexed files change, run bash hooks/reindex.sh or CODE_INDEX_ROOT=. bash /path/to/code-index-md/hooks/reindex.sh.
 ```
 
 ## Manual Hook Install

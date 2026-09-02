@@ -200,11 +200,130 @@ run_home_rejection_case() {
   test ! -e "$project/.code-index"
 }
 
+run_bounded_pyramid_case() {
+  local project="$TMP_ROOT/bounded" i
+  mkdir -p "$project/root"
+  for i in $(seq 1 80); do
+    mkdir -p "$project/single-$i"
+    printf 'function singleton_%s() { return %s; }\n' "$i" "$i" > "$project/single-$i/file.js"
+  done
+  printf 'function singleton_hot_one() { return 1; }\n\n\n' > "$project/single-1/file.js"
+  printf 'function singleton_hot_two() { return 2; }\n\n\n' > "$project/single-2/file.js"
+  for i in $(seq 1 20); do
+    printf 'function dense_%s() { return %s; }\n' "$i" "$i" > "$project/root/file-$i.js"
+  done
+  for i in $(seq 1 700); do printf 'function symbol_%s() {}\n' "$i" >> "$project/root/hot.js"; done
+  TIER2_MAX_FILES=10 TIER3_MAX_LINES=40 CODE_INDEX_ROOT="$project" HOT_LINES=1 bash "$ROOT_DIR/hooks/reindex.sh"
+  test "$(wc -l < "$project/CODE_INDEX.md")" -le 100
+  while IFS= read -r path; do test "$(wc -l < "$path")" -le 40; done < <(find "$project/.code-index" -type f -name '*.md' -print)
+  test -f "$project/.code-index/root#1.md"
+  test -f "$(find "$project/.code-index" -name 'single-80-file.js.md' -print -quit)"
+  test -f "$(find "$project/.code-index" -name 'single-1-file.js.md' -print -quit)"
+  test -f "$(find "$project/.code-index" -name 'single-2-file.js.md' -print -quit)"
+  assert_contains "$project/.code-index/root.md" 'hot.js'
+  test "$(rg -F -c 'symbol_' "$project/.code-index" | awk -F: '{sum += $2} END {print sum+0}')" -ge 700
+  test "$(rg -F -l 'single-' "$project/CODE_INDEX.md" "$project/.code-index" | wc -l)" -ge 1
+  hash_generated() {
+    find "$project" -path '*/.code-index*' -type f -name '*.md' -o -name 'CODE_INDEX.md' | sort |
+      while IFS= read -r path; do
+        printf '%s\n' "$path"
+        sed -E 's/^> Updated: .*/> Updated: normalized/' "$path"
+      done | sha256sum
+  }
+  local first second
+  first=$(hash_generated)
+  CODE_INDEX_ROOT="$project" HOT_LINES=1 TIER2_MAX_FILES=10 TIER3_MAX_LINES=40 bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  second=$(hash_generated)
+  test "$first" = "$second"
+}
+
+run_stale_page_case() {
+  local project="$TMP_ROOT/stale-pages"
+  mkdir -p "$project/group"
+  printf 'function steady() { return 1; }\n' > "$project/group/steady.js"
+  for i in $(seq 1 100); do printf 'function hot_symbol_%s() {}\n' "$i" >> "$project/group/hot.js"; done
+  CODE_INDEX_ROOT="$project" HOT_LINES=1 TIER3_MAX_LINES=10 bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  test -f "$project/.code-index/group/hot.js.md.2.md"
+  printf 'function cooled() { return 1; }\n' > "$project/group/hot.js"
+  printf '{"tool_input":{"file_path":"%s"}}' "$project/group/hot.js" | \
+    CODE_INDEX_ROOT="$project" HOT_LINES=1 TIER3_MAX_LINES=10 bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  test ! -e "$project/.code-index/group/hot.js.md"
+  test ! -e "$project/.code-index/group/hot.js.md.2.md"
+}
+
+run_pyramid_root_cap_case() {
+  local project="$TMP_ROOT/root-cap" i
+  mkdir -p "$project/single"
+  for i in $(seq 1 400); do printf 'function root_symbol_%s() {}\n' "$i" >> "$project/root-cap.js"; done
+  for i in $(seq 1 400); do printf 'function single_symbol_%s() {}\n' "$i" >> "$project/single/file.js"; done
+  TIER2_MAX_LINES=40 TIER3_MAX_LINES=40 HOT_LINES=1 CODE_INDEX_ROOT="$project" bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  test "$(wc -l < "$project/CODE_INDEX.md")" -le 100
+  assert_contains "$project/CODE_INDEX.md" '.code-index/root-cap.md'
+  assert_contains "$project/CODE_INDEX.md" '.code-index/single.md'
+  test -f "$project/.code-index/root-cap/root-cap.js.md"
+  test -f "$project/.code-index/single/file.js.md"
+  test "$(rg -F -c 'root_symbol_' "$project/.code-index" | awk -F: '{sum += $2} END {print sum+0}')" -ge 400
+  test "$(rg -F -c 'single_symbol_' "$project/.code-index" | awk -F: '{sum += $2} END {print sum+0}')" -ge 400
+}
+
+run_incremental_shard_case() {
+  local project="$TMP_ROOT/incremental-shard" i
+  mkdir -p "$project/sharded"
+  for i in $(seq 1 120); do printf 'function old_symbol_%s() {}\n' "$i" > "$project/sharded/file-$i.js"; done
+  TIER2_MAX_FILES=10 CODE_INDEX_ROOT="$project" bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  printf 'function new_symbol_120() {}\n' > "$project/sharded/file-120.js"
+  printf '{"tool_input":{"file_path":"%s"}}' "$project/sharded/file-120.js" | \
+    TIER2_MAX_FILES=10 CODE_INDEX_ROOT="$project" bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  ! rg -Fq 'old_symbol_120' "$project/CODE_INDEX.md" "$project/.code-index"
+  rg -Fq 'new_symbol_120' "$project/CODE_INDEX.md" "$project/.code-index"
+  rg -Fq $'sharded/file-120.js\t1\t1' "$project/.code-index/.manifest"
+}
+
+run_tier1_pagination_case() {
+  local project="$TMP_ROOT/tier1-pages" i path
+  for i in $(seq 1 120); do
+    mkdir -p "$project/dir-$i"
+    printf 'function hot_%s_a() {}\n' "$i" > "$project/dir-$i/a.js"
+    printf 'function hot_%s_b() {}\n' "$i" > "$project/dir-$i/b.js"
+  done
+  TIER1_MAX_LINES=100 HOT_LINES=1 TIER2_MAX_FILES=10 CODE_INDEX_ROOT="$project" bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  while IFS= read -r path; do test "$(wc -l < "$path")" -le 100; done < <(find "$project" -maxdepth 1 -type f -name 'CODE_INDEX.md*' -print)
+  test -f "$project/.code-index/__tier1.md"
+  test "$(find "$project/.code-index" -maxdepth 1 -type f -name '__tier1.md.*.md' -print | wc -l)" -ge 1
+  test "$(rg -F -c 'hot_' "$project"/CODE_INDEX.md* "$project/.code-index" | awk -F: '{sum += $2} END {print sum+0}')" -ge 240
+}
+
+run_tier1_migration_case() {
+  local project="$TMP_ROOT/tier1-migration" i
+  for i in $(seq 1 120); do
+    mkdir -p "$project/dir-$i"
+    printf 'function migrate_%s_a() {}\n' "$i" > "$project/dir-$i/a.js"
+    printf 'function migrate_%s_b() {}\n' "$i" > "$project/dir-$i/b.js"
+  done
+  printf 'legacy\n' > "$project/CODE_INDEX.md.2.md"
+  TIER1_MAX_LINES=100 HOT_LINES=1 CODE_INDEX_ROOT="$project" bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  test ! -e "$project/CODE_INDEX.md.2.md"
+  ! rg -Fq 'CODE_INDEX.md.2.md' "$project/.code-index" "$project/CODE_INDEX.md" "$project/.code-index/.manifest"
+  local flat="$TMP_ROOT/tier1-flat-migration"
+  mkdir -p "$flat"
+  printf 'function flat_migration() {}\n' > "$flat/file.js"
+  printf 'legacy\n' > "$flat/CODE_INDEX.md.2.md"
+  CODE_INDEX_ROOT="$flat" bash "$ROOT_DIR/hooks/reindex.sh" >/dev/null
+  test ! -e "$flat/CODE_INDEX.md.2.md"
+  ! rg -Fq 'CODE_INDEX.md.2.md' "$flat/.code-index" "$flat/CODE_INDEX.md" "$flat/.code-index/.manifest"
+}
+
 run_case claude
 run_case codex
 run_case generic
 run_freshness_case
 run_collision_case
 run_home_rejection_case
+run_bounded_pyramid_case
+run_stale_page_case
+run_pyramid_root_cap_case
+run_incremental_shard_case
+run_tier1_pagination_case
+run_tier1_migration_case
 
 echo "Reindex smoke OK."
