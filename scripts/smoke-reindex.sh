@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT
 write_fixture() {
   local project="$1"
   mkdir -p "$project/src/main/java/example" "$project/docs" "$project/pkg" \
-    "$project/nested" "$project/nested-repo/.git" "$project/gitlink-repo" "$project/esm" "$project/common" "$project/scripts"
+    "$project/nested" "$project/nested-repo/.git" "$project/gitlink-repo" "$project/esm" "$project/common" "$project/scripts" "$project/graphify-out"
   git init -q "$project"
   git init -q "$project/gitlink-repo"
   git -C "$project/gitlink-repo" config user.name smoke
@@ -80,6 +80,14 @@ JAVA
 
 ## Setup
 MD
+  cat > "$project/docs/_COMMUNITY_Community 111.md" <<'MD'
+# Community
+
+## Whitespace path
+MD
+  cat > "$project/graphify-out/generated.md" <<'MD'
+# Generated output
+MD
 }
 
 assert_contains() {
@@ -117,18 +125,25 @@ run_case() {
 
   test -f "$project/CODE_INDEX.md"
   assert_contains "$project/CODE_INDEX.md" 'offset=N limit=L'
-  assert_contains "$project/CODE_INDEX.md" 'alpha'
+  rg -Fq 'alpha' "$project/CODE_INDEX.md" "$project/.code-index"
   assert_contains "$project/CODE_INDEX.md" 'nested'
   assert_not_contains "$project/CODE_INDEX.md" 'nestedRepo'
   assert_not_contains "$project/CODE_INDEX.md" 'gitlinkRepo'
   assert_not_contains "$project/.code-index/.manifest" 'gitlink-repo'
-  assert_contains "$project/CODE_INDEX.md" 'moduleFn'
-  assert_contains "$project/CODE_INDEX.md" 'commonFn'
-  assert_contains "$project/CODE_INDEX.md" 'run_task'
-  assert_contains "$project/CODE_INDEX.md" 'cleanup'
-  assert_contains "$project/CODE_INDEX.md" 'class Sample'
-  assert_contains "$project/CODE_INDEX.md" 'public class App'
-  assert_contains "$project/CODE_INDEX.md" '# Guide'
+  for pattern in moduleFn commonFn run_task cleanup 'class Sample' 'public class App' '# Guide'; do
+    rg -Fq "$pattern" "$project/CODE_INDEX.md" "$project/.code-index"
+  done
+  assert_contains "$project/.code-index/docs.md" '_COMMUNITY_Community 111.md'
+  assert_contains "$project/.code-index/.manifest" $'docs/_COMMUNITY_Community 111.md\t'
+  assert_not_contains "$project/CODE_INDEX.md" 'graphify-out'
+  ! rg -Fq 'graphify-out' "$project/.code-index"
+
+  printf '# Community updated\n\n## Whitespace path\n' > "$project/docs/_COMMUNITY_Community 111.md"
+  hook_reindex "$project" "$project/docs/_COMMUNITY_Community 111.md"
+  assert_contains "$project/.code-index/docs.md" '_COMMUNITY_Community 111.md'
+  assert_contains "$project/.code-index/.manifest" $'docs/_COMMUNITY_Community 111.md\t'
+  assert_not_contains "$project/CODE_INDEX.md" 'graphify-out'
+  ! rg -Fq 'graphify-out' "$project/.code-index"
 
   CODE_INDEX_ROOT="$project/nested-repo" bash "$ROOT_DIR/hooks/reindex.sh"
   assert_contains "$project/nested-repo/CODE_INDEX.md" 'nestedRepo'

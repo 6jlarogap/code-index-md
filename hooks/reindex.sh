@@ -25,7 +25,7 @@ MIN_DIR_FILES=${MIN_DIR_FILES:-2}
 FLAT_LINES_THRESHOLD=${FLAT_LINES_THRESHOLD:-300}
 REINDEX_VERBOSE=${REINDEX_VERBOSE:-0}
 REINDEX_EXCLUDE="${REINDEX_EXCLUDE:-}"
-REINDEX_DEFAULT_EXCLUDE="${REINDEX_DEFAULT_EXCLUDE-venv .venv .tox .nox}"
+REINDEX_DEFAULT_EXCLUDE="${REINDEX_DEFAULT_EXCLUDE-venv .venv .tox .nox graphify-out}"
 REINDEX_ALL_EXCLUDES="$REINDEX_DEFAULT_EXCLUDE $REINDEX_EXCLUDE"
 MAX_SUBTREE_DEPTH=${MAX_SUBTREE_DEPTH:-}   # empty = disabled; e.g. 2 collapses depth>2 dirs into ancestor
 TIER2_MAX_FILES=${TIER2_MAX_FILES:-50}
@@ -189,11 +189,11 @@ bound_buckets() {
   local -A bounded=() singles=()
   local dir rel count shard n singleton_dirs=0
   for dir in "${!bucket[@]}"; do
-    IFS=' ' read -ra _files <<< "${bucket[$dir]:-}"
+    mapfile -t _files < <(printf '%s' "${bucket[$dir]:-}")
     count=0; for rel in "${_files[@]}"; do [[ -n "$rel" ]] && count=$((count + 1)); done
     if [[ "$dir" != "." && $count -eq 1 ]]; then
       singleton_dirs=$((singleton_dirs + 1))
-      singles[__singletons]+="${_files[0]} "
+      singles[__singletons]+="${_files[0]}"$'\n'
       bounded[$dir]+="${bucket[$dir]}"
     else
       bounded[$dir]+="${bucket[$dir]}"
@@ -201,27 +201,27 @@ bound_buckets() {
   done
   for dir in "${!bucket[@]}"; do unset 'bucket[$dir]'; done
   if (( singleton_dirs > TIER1_MAX_SINGLETONS )); then
-    for dir in $(printf '%s\n' "${!bounded[@]}" | sort); do
-      IFS=' ' read -ra _files <<< "${bounded[$dir]:-}"
+    while IFS= read -r dir; do
+      mapfile -t _files < <(printf '%s' "${bounded[$dir]:-}")
       [[ "$dir" != "." && ${#_files[@]} -eq 1 ]] && unset 'bounded[$dir]'
-    done
+    done < <(printf '%s\n' "${!bounded[@]}" | sort)
     if [[ -n "${singles[__singletons]:-}" ]]; then
-      singles[__singletons]=$(printf '%s\n' ${singles[__singletons]} | sort | tr '\n' ' ')
+      singles[__singletons]=$(printf '%s' "${singles[__singletons]}" | sort)
       bounded[__singletons]="${singles[__singletons]}"
     fi
   fi
-  for dir in $(printf '%s\n' "${!bounded[@]}" | sort); do
-    IFS=' ' read -ra _files <<< "${bounded[$dir]:-}"
+  while IFS= read -r dir; do
+    mapfile -t _files < <(printf '%s' "${bounded[$dir]:-}")
     shard=0; n=0
-    for rel in $(for rel in "${_files[@]}"; do
-      [[ -n "$rel" ]] && printf '%s %s\n' "${file_hot[$rel]:-0}" "$rel"
-    done | sort -k1,1nr -k2,2 | cut -d' ' -f2-); do
+    while IFS= read -r rel; do
       [[ -z "$rel" ]] && continue
       if (( n >= TIER2_MAX_FILES )); then shard=$((shard + 1)); n=0; fi
-      if (( shard == 0 )); then bucket[$dir]+="$rel "; else bucket["$dir#$shard"]+="$rel "; fi
+      if (( shard == 0 )); then bucket[$dir]+="$rel"$'\n'; else bucket["$dir#$shard"]+="$rel"$'\n'; fi
       n=$((n + 1))
-    done
-  done
+    done < <(for rel in "${_files[@]}"; do
+      [[ -n "$rel" ]] && printf '%s\t%s\n' "${file_hot[$rel]:-0}" "$rel"
+    done | sort -k1,1nr -k2,2 | cut -f2-)
+  done < <(printf '%s\n' "${!bounded[@]}" | sort)
 }
 
 clear_pages() {
@@ -263,14 +263,15 @@ encode_dir() {
 # emit_tier1: writes CODE_INDEX.md from in-memory file_* + bucket arrays.
 emit_tier1() {
   local t1_sub="" t1_hot="" t1_inline=""
-  local dir dir_enc files count rel lang lines syms hot base dir_syms dir_display dir_lang
+  local dir dir_enc files sorted_files count rel lang lines syms hot base dir_syms dir_display dir_lang
 
-  for dir in $(printf '%s\n' "${!bucket[@]}" | sort); do
-    IFS=' ' read -ra files <<< "${bucket[$dir]:-}"
+  while IFS= read -r dir; do
+    mapfile -t files < <(printf '%s' "${bucket[$dir]:-}")
     count=0
     for rel in "${files[@]}"; do [[ -n "$rel" ]] && count=$(( count + 1 )); done
     if (( EMIT_PYRAMID == 0 && count < MIN_DIR_FILES )) && [[ "$dir" != *#* ]]; then
-      for rel in $(printf '%s\n' "${files[@]}" | sort); do
+      mapfile -t sorted_files < <(printf '%s\n' "${files[@]}" | sort)
+      for rel in "${sorted_files[@]}"; do
         [[ -z "$rel" ]] && continue
         t1_inline+=$(index_${file_lang[$rel]} "$ROOT/$rel")$'\n'
       done
@@ -286,7 +287,8 @@ emit_tier1() {
       done
       [[ "$dir" == "." ]] && dir_display="." || dir_display="${dir}/"
       t1_sub+="| $dir_display | $dir_lang | $count | $dir_syms | [[.code-index/$dir_enc.md]] |\n"
-      for rel in $(printf '%s\n' "${files[@]}" | sort); do
+      mapfile -t sorted_files < <(printf '%s\n' "${files[@]}" | sort)
+      for rel in "${sorted_files[@]}"; do
         [[ -z "$rel" ]] && continue
         hot=${file_hot[$rel]}
         if [[ $hot == 1 ]]; then
@@ -296,7 +298,7 @@ emit_tier1() {
           t1_hot+="| $rel | $lines | $syms | [[.code-index/$dir_enc/$base.md]] |\n"
         fi
       done
-  done
+  done < <(printf '%s\n' "${!bucket[@]}" | sort)
 
   # ORGANS: excluded dirs that have their own CODE_INDEX.md (sub-pyramids)
   local t1_organs="" _od
@@ -353,7 +355,7 @@ emit_tier2() {
 
   {
     printf '# .code-index/%s.md\n> Full symbols for: %s\n\n' "$dir_enc" "$dir"
-    for rel in $(printf '%s\n' ${bucket[$dir]:-} | sort); do
+    while IFS= read -r rel; do
       [[ -z "$rel" ]] && continue
       base=$(basename "$rel")
       [[ "$dir" == __singletons* ]] && base="${rel//\//-}"
@@ -364,7 +366,7 @@ emit_tier2() {
       else
         index_${file_lang[$rel]} "$ROOT/$rel"
       fi
-    done
+    done < <(printf '%s' "${bucket[$dir]:-}" | sort)
   } > "$dest_root/$dir_enc.raw"
   page_file "$dest_root/$dir_enc.raw" "$dest_root/$dir_enc.md" "$TIER2_MAX_LINES"
   rm -f "$dest_root/$dir_enc.raw"
@@ -396,7 +398,9 @@ do_incremental() {
     file_hot[$mrel]="${old_mhot[$mrel]}"
     file_lang[$mrel]="${old_mlang[$mrel]}"
     mdir=$(dirname "$mrel")
-    case " ${bucket[$mdir]:-} " in *" $mrel "*) ;; *) bucket[$mdir]+="$mrel " ;; esac
+    if ! printf '%s' "${bucket[$mdir]:-}" | grep -Fqx -- "$mrel"; then
+      bucket[$mdir]+="$mrel"$'\n'
+    fi
   done
   # Override changed file entry
   file_lines[$rel]=$lines
@@ -407,10 +411,7 @@ do_incremental() {
   # Bounded singleton bucketing changes the lower-tier owner; rebuild once so
   # incremental references cannot point at an unsharded tier.
   bound_buckets
-  case " ${bucket[$(dirname "$rel")]:-} " in
-    *" $rel "*) ;;
-    *) return 1 ;;
-  esac
+  printf '%s' "${bucket[$(dirname "$rel")]:-}" | grep -Fqx -- "$rel" || return 1
 
   local dir dir_enc
   dir=$(dirname "$rel")
@@ -477,7 +478,7 @@ do_full_regen() {
     lines=$(wc -l < "$f"); syms=$(index_js "$f" | grep -c "^- " || true)
     hot=$(compute_hot "$lang" "$lines" "$syms")
     file_lines[$rel]=$lines; file_symbols[$rel]=$syms; file_lang[$rel]=$lang; file_hot[$rel]=$hot
-    bucket[$dir]+="$rel "
+    bucket[$dir]+="$rel"$'\n'
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
   done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" \( -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) \
@@ -490,7 +491,7 @@ do_full_regen() {
     lines=$(wc -l < "$f"); syms=$(index_java "$f" | grep -c "^- " || true)
     hot=$(compute_hot "$lang" "$lines" "$syms")
     file_lines[$rel]=$lines; file_symbols[$rel]=$syms; file_lang[$rel]=$lang; file_hot[$rel]=$hot
-    bucket[$dir]+="$rel "
+    bucket[$dir]+="$rel"$'\n'
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
   done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -name "*.java" \
@@ -505,7 +506,7 @@ do_full_regen() {
     lines=$(wc -l < "$f"); syms=$(index_md "$f" | grep -c "^- " || true)
     hot=$(compute_hot "$lang" "$lines" "$syms")
     file_lines[$rel]=$lines; file_symbols[$rel]=$syms; file_lang[$rel]=$lang; file_hot[$rel]=$hot
-    bucket[$dir]+="$rel "
+    bucket[$dir]+="$rel"$'\n'
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
   done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -maxdepth 3 -name "*.md" \
@@ -520,7 +521,7 @@ do_full_regen() {
     lines=$(wc -l < "$f"); syms=$(index_py "$f" | grep -c "^- " || true)
     hot=$(compute_hot "$lang" "$lines" "$syms")
     file_lines[$rel]=$lines; file_symbols[$rel]=$syms; file_lang[$rel]=$lang; file_hot[$rel]=$hot
-    bucket[$dir]+="$rel "
+    bucket[$dir]+="$rel"$'\n'
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
   done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -name "*.py" \
@@ -534,7 +535,7 @@ do_full_regen() {
     lines=$(wc -l < "$f"); syms=$(index_sh "$f" | grep -c "^- " || true)
     hot=$(compute_hot "$lang" "$lines" "$syms")
     file_lines[$rel]=$lines; file_symbols[$rel]=$syms; file_lang[$rel]=$lang; file_hot[$rel]=$hot
-    bucket[$dir]+="$rel "
+    bucket[$dir]+="$rel"$'\n'
     total_files=$(( total_files + 1 )); total_lines=$(( total_lines + lines ))
     printf '%s\t%s\t%s\t%s\t%s\n' "$rel" "$lines" "$syms" "$hot" "$lang" >> "$TMP/.manifest.tmp"
   done < <(find "$ROOT" "${git_repo_prune[@]}" "${gitlink_prune[@]}" -name "*.sh" \
@@ -565,7 +566,7 @@ do_full_regen() {
   # small_project check
   local cnt_
   for dir in "${!bucket[@]}"; do
-    cnt_=$(wc -w <<< "${bucket[$dir]:-}")
+    cnt_=$(printf '%s' "${bucket[$dir]:-}" | awk 'NF{n++} END{print n+0}')
     [[ $cnt_ -gt $max_bucket ]] && max_bucket=$cnt_
   done
 
@@ -595,9 +596,9 @@ do_full_regen() {
 
   # Pyramid emit: tier-2 + tier-3 into TMP
   EMIT_PYRAMID=1
-  for dir in $(printf '%s\n' "${!bucket[@]}" | sort); do
+  while IFS= read -r dir; do
     local files=()
-    IFS=' ' read -ra files <<< "${bucket[$dir]:-}"
+    mapfile -t files < <(printf '%s' "${bucket[$dir]:-}")
     local count=0
     for rel in "${files[@]}"; do [[ -n "$rel" ]] && count=$(( count + 1 )); done
 
@@ -619,7 +620,7 @@ do_full_regen() {
         fi
       done
     fi
-  done
+  done < <(printf '%s\n' "${!bucket[@]}" | sort)
 
   mv "$TMP/.manifest.tmp" "$TMP/.manifest"
 
