@@ -328,6 +328,74 @@ run_tier1_migration_case() {
   ! rg -Fq 'CODE_INDEX.md.2.md' "$flat/.code-index" "$flat/CODE_INDEX.md" "$flat/.code-index/.manifest"
 }
 
+# Compare semantic output while ignoring the intentionally refreshed timestamp.
+normalized_generated() {
+  python3 - "$1" "${2:-normalized}" <<'PYTEST'
+import hashlib, pathlib, re, sys
+root = pathlib.Path(sys.argv[1]); digest = hashlib.sha256()
+paths = list((root / '.code-index').rglob('*.md')) + list(root.glob('CODE_INDEX.md*'))
+for path in sorted(paths):
+    digest.update(str(path.relative_to(root)).encode())
+    content = path.read_text()
+    if sys.argv[2] == 'raw':
+        digest.update(str(path.stat().st_mtime_ns).encode())
+    else:
+        content = re.sub(r'^> Updated: .*$', '> Updated: normalized', content, flags=re.M)
+    digest.update(content.encode())
+manifest = (root / '.code-index/.manifest').read_text().splitlines()
+digest.update('\n'.join(sorted(manifest)).encode())
+print(digest.hexdigest())
+PYTEST
+}
+
+run_event_case() {
+  local project="$TMP_ROOT/events" before after event
+  write_fixture "$project"
+  CODE_INDEX_ROOT="$project" HOT_LINES=2 bash "$ROOT_DIR/hooks/reindex.sh"
+  printf 'def changed():\n    return 9\n' > "$project/pkg/sample.py"
+  REINDEX_VERBOSE=1 hook_reindex "$project" "$project/pkg/sample.py" 2 2> "$TMP_ROOT/event.log"
+  assert_contains "$TMP_ROOT/event.log" 'REINDEX: incremental pkg/sample.py'
+  before=$(normalized_generated "$project" raw)
+  for event in image.png graphify-out/generated.md venv/ignored.py .code-index/pkg.md CODE_INDEX.md nested-repo/src/inside.js gitlink-repo/src/inside.js ../outside.py ../../outside.py docs/../../../outside.py; do
+    REINDEX_VERBOSE=1 hook_reindex "$project" "$project/$event" 2 2> "$TMP_ROOT/event.log"
+    assert_contains "$TMP_ROOT/event.log" 'REINDEX: skipped'
+    after=$(normalized_generated "$project" raw)
+    test "$before" = "$after"
+  done
+  # A d3-prefixed directory is eligible; only the JS basename is excluded.
+  mkdir "$project/d3-components"
+  printf 'function ordinary() {}\n' > "$project/d3-components/ordinary.js"
+  REINDEX_VERBOSE=1 hook_reindex "$project" "$project/d3-components/ordinary.js" 2 2> "$TMP_ROOT/event.log"
+  assert_contains "$TMP_ROOT/event.log" 'REINDEX: full fallback'
+  assert_contains "$project/.code-index/.manifest" 'd3-components/ordinary.js'
+  # An irrelevant event must not even create an index in a fresh root.
+  mkdir "$TMP_ROOT/empty"
+  hook_reindex "$TMP_ROOT/empty" "$TMP_ROOT/empty/image.png"
+  test ! -e "$TMP_ROOT/empty/.code-index"
+
+  for event in add delete rename shard; do
+    case "$event" in
+      add) printf 'def added():\n    pass\n' > "$project/pkg/added.py" ;;
+      delete) rm "$project/pkg/added.py" ;;
+      rename) mv "$project/pkg/sample.py" "$project/pkg/renamed.py" ;;
+      shard) printf '## Another heading\n' >> "$project/docs/guide.md" ;;
+    esac
+    local changed="$project/pkg/added.py"
+    [[ "$event" == rename ]] && changed="$project/pkg/renamed.py"
+    if [[ "$event" == shard ]]; then
+      changed="$project/docs/guide.md"
+      CODE_INDEX_ROOT="$project" HOT_LINES=2 TIER2_MAX_FILES=1 bash "$ROOT_DIR/hooks/reindex.sh"
+      printf '## Sharded edit\n' >> "$changed"
+    fi
+    TIER2_MAX_FILES=1 REINDEX_VERBOSE=1 hook_reindex "$project" "$changed" 2 2> "$TMP_ROOT/event.log"
+    before=$(normalized_generated "$project")
+    CODE_INDEX_ROOT="$project" HOT_LINES=2 TIER2_MAX_FILES=1 bash "$ROOT_DIR/hooks/reindex.sh"
+    after=$(normalized_generated "$project")
+    test "$before" = "$after"
+  done
+}
+
+run_event_case
 run_case claude
 run_case codex
 run_case generic

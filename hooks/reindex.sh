@@ -639,6 +639,52 @@ do_full_regen() {
 # ── main ─────────────────────────────────────────────────────────────────────
 
 main() {
+  # Stdin guard: read FILE_PATH only from hook context (not terminal + jq present)
+  local FILE_PATH=""
+  if [ ! -t 0 ] && command -v jq >/dev/null 2>&1; then
+    local INPUT; INPUT=$(cat)
+    FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
+    FILE_PATH="${FILE_PATH:-}"
+  fi
+
+  # Filter hook events before locks, manifest reads, or full fallback.
+  if [[ -n "$FILE_PATH" ]]; then
+    [[ "$FILE_PATH" == /* ]] || FILE_PATH="$ROOT/$FILE_PATH"
+    FILE_PATH=$(realpath -m -- "$FILE_PATH")
+    local rel="${FILE_PATH#$ROOT/}" lang dir excluded="" part
+    if [[ "$FILE_PATH" != "$ROOT/"* ]]; then
+      excluded="out-of-root"
+    else
+      lang=$(detect_lang "$rel")
+      [[ -n "$lang" ]] || excluded="unsupported"
+      case "/$rel" in
+        */.git/*|*/.code-index*|*/CODE_INDEX.md|*/CODE_INDEX.md.*.md) excluded="generated" ;;
+      esac
+      for part in $REINDEX_ALL_EXCLUDES; do
+        [[ "/$rel" == */$part/* ]] && excluded="excluded"
+      done
+      case "$lang:/$rel" in
+        js:*/node_modules/*|js:*/d3js/*|js:*.min.js|js:*.min.mjs|js:*.min.cjs) excluded="excluded" ;;
+        md:*/node_modules/*|md:*/d3js/*|md:*/.pytest_cache/*|md:/*/*/*/*) excluded="excluded" ;;
+        java:*/test/*|java:*/androidTest/*|java:*/build/*) excluded="excluded" ;;
+        py:*/migrations/*|py:*/__pycache__/*|sh:*/node_modules/*) excluded="excluded" ;;
+      esac
+      if [[ "$lang" == js && "${rel##*/}" == [dD]3* ]]; then excluded="excluded"; fi
+      dir=$(dirname "$FILE_PATH")
+      while [[ "$dir" != "$ROOT" && "$dir" != / ]]; do
+        [[ -e "$dir/.git" ]] && excluded="nested-repository"
+        dir=$(dirname "$dir")
+      done
+      while IFS= read -r part; do
+        [[ -n "$part" && "$rel" == "$part/"* ]] && excluded="nested-repository"
+      done < <(git -C "$ROOT" ls-files -s 2>/dev/null | awk '$1 == "160000" {sub(/^[^\t]*\t/, ""); print}')
+    fi
+    if [[ -n "$excluded" ]]; then
+      [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: skipped $excluded" >&2
+      return 0
+    fi
+  fi
+
   # Bail early if INDEX_DIR exists but is not writable (e.g. stale root-owned dir)
   if [[ -e "$INDEX_DIR" ]] && [[ ! -w "$INDEX_DIR" ]]; then
     printf 'REINDEX: skipping — %s not writable (fix: sudo chown -R %s %s)\n' \
@@ -655,14 +701,6 @@ main() {
   # Prune orphaned tmp/old dirs from prior crashes (safe under lock)
   rm -rf "$ROOT"/.code-index.tmp.* "$ROOT"/.code-index.old.* 2>/dev/null || true
 
-  # Stdin guard: read FILE_PATH only from hook context (not terminal + jq present)
-  local FILE_PATH=""
-  if [ ! -t 0 ] && command -v jq >/dev/null 2>&1; then
-    local INPUT; INPUT=$(cat)
-    FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)
-    FILE_PATH="${FILE_PATH:-}"
-  fi
-
   # Pass 0: load prior manifest into old_m* arrays
   local -A old_mlines old_msyms old_mhot old_mlang
   local TMP="$INDEX_DIR"   # used by encode_dir in incremental path
@@ -675,11 +713,15 @@ main() {
     done < "$MANIFEST"
   fi
 
+  local reason="manual full refresh"
+  [[ -n "$FILE_PATH" ]] && reason="missing manifest"
   # Try incremental path first
   if [[ -n "$FILE_PATH" && "${#old_mlines[@]}" -gt 0 ]]; then
+    reason="add/delete/rename or changed bucket ownership"
     do_incremental && return 0
   fi
 
+  [[ $REINDEX_VERBOSE == 1 ]] && echo "REINDEX: full fallback: $reason" >&2
   # Full regen (TMP will be set as local inside do_full_regen, shadowing main's TMP)
   do_full_regen
 }

@@ -18,21 +18,35 @@ Use the generated index before opening indexed source files. The goal is to read
 
 ## After Edits
 
-Regenerate the index after changing indexed docs or source:
+Use one generator per exact root: prefer its documented local wrapper; otherwise use
+this shared hook. Never run the shared generator over a different owner's output.
+Coalesce edits in one tool batch, then refresh before the next indexed read. Skip
+the manual call only after observing successful hook output covering those edits.
+Do not assume the host delivers Edit/Write events for shell or patch tools.
+
+For a single changed file, the shared hook accepts the existing stdin JSON route
+(absolute file path; `jq` required):
 
 ```bash
-bash hooks/reindex.sh
+jq -n --arg path "$changed_file" '{tool_input:{file_path:$path}}' |
+  CODE_INDEX_ROOT=/path/to/project bash /path/to/code-index-md/hooks/reindex.sh
 ```
 
-For copied/manual installs, pick the project root explicitly when needed:
+An existing eligible file normally refreshes its directory and root from the
+manifest. Add/delete/rename, a missing manifest, or changed bucket ownership may
+require a full rebuild. Unsupported, excluded, generated, and out-of-root events
+are skipped. For multiple changed files, deliver each event or intentionally run
+one full refresh; do not pass only the last file and assume the batch is covered.
+
+Intentional full refresh (including scope/configuration changes):
 
 ```bash
-CODE_INDEX_ROOT=/path/to/project bash /path/to/code-index-md/hooks/reindex.sh
-CODEX_PROJECT_ROOT=/path/to/project bash /path/to/code-index-md/hooks/reindex.sh
-CLAUDE_PROJECT_ROOT=/path/to/project bash /path/to/code-index-md/hooks/reindex.sh
+CODE_INDEX_ROOT=/path/to/project bash /path/to/code-index-md/hooks/reindex.sh < /dev/null
 ```
 
-Root discovery order is `CODE_INDEX_ROOT`, `CODEX_PROJECT_ROOT`, `CLAUDE_PROJECT_ROOT`, then `pwd`.
+Root precedence: `CODE_INDEX_ROOT`, `CODEX_PROJECT_ROOT`, `CLAUDE_PROJECT_ROOT`,
+then `pwd`. Resolve the nearest enclosing project first; never index a parent to
+cover a nested repository. In the plugin repository, use `bash hooks/reindex.sh`.
 
 ## Indexed Content
 
